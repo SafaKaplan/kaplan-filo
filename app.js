@@ -812,8 +812,11 @@ if (oturum) baslat(); else girisGoster();
     const k = document.getElementById('uygulama');
     if (!k) return;
     const dikey = screen.height > screen.width;
-    if (window.navigator.standalone && dikey && window.innerHeight < screen.height - 5) k.style.height = screen.height + 'px';
-    else k.style.height = '';
+    const hedef = Math.max(window.innerHeight, dikey ? screen.height : 0);
+    if (window.navigator.standalone && dikey) { k.style.height = hedef + 'px'; k.style.bottom = 'auto'; }
+    else { k.style.height = ''; k.style.bottom = ''; }
+    if (location.hash === '#tani') document.title = 'iH' + window.innerHeight + ' sH' + screen.height + ' st' + window.navigator.standalone + ' ub' + Math.round(k.getBoundingClientRect().bottom);
   };
-  window.addEventListener('resize', duzelt); window.addEventListener('orientationchange', () => setTimeout(duzelt, 300)); duzelt();
+  window.addEventListener('resize', duzelt); window.addEventListener('orientationchange', () => setTimeout(duzelt, 300)); window.addEventListener('pageshow', duzelt);
+  duzelt(); setTimeout(duzelt, 500); setTimeout(duzelt, 1500);
 })();
