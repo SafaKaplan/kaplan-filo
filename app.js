@@ -175,22 +175,23 @@ const S = {
   pYil: simdi.getFullYear(), pAy: simdi.getMonth() + 1, plaka: null, secim: [],
   gYil: simdi.getFullYear(), gAy: simdi.getMonth() + 1,
   lYil: simdi.getFullYear(), lAy: simdi.getMonth() + 1, lFiltre: 'Tümü',
-  kzYil: simdi.getFullYear()
+  kzYil: simdi.getFullYear(),
+  hYil: simdi.getFullYear(), hAy: simdi.getMonth() + 1, hAcik: {}
 };
-let D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0 };
+let D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
 
 function onbellekYaz() {
-  depoYaz(ONBELLEK_ANAHTAR, { plakalar: D.plakalar, firmalar: D.firmalar, soforler: D.soforler, giderler: D.giderler, gelirler: D.gelirler, kz: D.kz, puantaj: D.puantaj, bekleyen: D.bekleyen });
+  depoYaz(ONBELLEK_ANAHTAR, { plakalar: D.plakalar, firmalar: D.firmalar, soforler: D.soforler, giderler: D.giderler, gelirler: D.gelirler, kz: D.kz, puantaj: D.puantaj, bekleyen: D.bekleyen, plakaBilgi: D.plakaBilgi, hakedis: D.hakedis, hakedisYok: D.hakedisYok });
 }
 function pAnahtar() { return S.plaka + '|' + yilAy(S.pYil, S.pAy); }
 
 async function puantajYukle() {
-  if (!S.plaka) return;
   const ya = yilAy(S.pYil, S.pAy);
-  const satirlar = await api('GET', 'puantaj', { select: '*', plaka: 'eq.' + S.plaka, yil_ay: 'eq.' + ya });
-  const harita = {};
-  (satirlar || []).forEach((s) => { harita[s.gun] = s; });
-  D.puantaj[S.plaka + '|' + ya] = harita;
+  const satirlar = await hepsi('puantaj', { yil_ay: 'eq.' + ya });
+  const grup = {};
+  D.plakalar.forEach((p) => { grup[p] = {}; });
+  (satirlar || []).forEach((r) => { (grup[r.plaka] || (grup[r.plaka] = {}))[r.gun] = r; });
+  Object.keys(grup).forEach((p) => { D.puantaj[p + '|' + ya] = grup[p]; });
 }
 async function verileriYukle() {
   if (S.yukleniyor) return;
@@ -202,12 +203,14 @@ async function verileriYukle() {
       hepsi('plakalar', { order: 'plaka.asc' }), hepsi('firmalar', { order: 'ad.asc' }), hepsi('soforler', { order: 'ad.asc' }),
       hepsi('giderler', { order: 'tarih.desc' }), hepsi('gelirler', { order: 'tarih.desc' }),
       hepsi('kar_zarar_ozet', { order: 'yil.asc,ay.asc' }),
-      api('GET', 'puantaj', { select: 'plaka', kaynak: 'eq.mobil', alindi: 'eq.false', limit: '1000' })
+      api('GET', 'puantaj', { select: 'plaka', kaynak: 'eq.mobil', alindi: 'eq.false', limit: '1000' }),
+      hepsi('hakedis', { order: 'yil_ay.asc,firma.asc,plaka.asc' }).then((r) => ({ ok: true, r: r }), (e) => ((e.tur === 'OTURUM' || e.tur === 'AG') ? Promise.reject(e) : { ok: false, r: [] }))
     ]);
+    D.plakaBilgi = {}; sonuc[0].forEach((r) => { D.plakaBilgi[r.plaka] = { firma: r.firma || '', sofor: r.sofor || '' }; });
+    D.hakedis = sonuc[7].r; D.hakedisYok = !sonuc[7].ok;
     D.plakalar = sonuc[0].map((r) => r.plaka); D.firmalar = sonuc[1].map((r) => r.ad); D.soforler = sonuc[2].map((r) => r.ad);
     D.giderler = sonuc[3]; D.gelirler = sonuc[4]; D.kz = sonuc[5];
     D.bekleyen = sonuc[6].length + D.giderler.filter(bekliyor).length + D.gelirler.filter(bekliyor).length;
-    if (!S.plaka || D.plakalar.indexOf(S.plaka) < 0) S.plaka = D.plakalar[0] || null;
     await puantajYukle();
     S.yuklendi = true;
     onbellekYaz();
@@ -269,8 +272,11 @@ function durumCiz() {
   b.setAttribute('style', stil);
   b.innerHTML = (donen ? '<svg class="donen" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg>'
     : '<span class="nokta" style="background:' + nokta + '"></span>') + '<span>' + esc(metin) + '</span>';
-  document.getElementById('baslik').textContent = BASLIKLAR[S.sekme];
-  document.querySelectorAll('nav button').forEach((n) => n.classList.toggle('aktif', n.dataset.sekme === S.sekme));
+  const ana = S.sekme === 'hakedis' ? 'puantaj' : S.sekme;
+  const alt = document.getElementById('alt-sekme');
+  alt.classList.toggle('hidden', ana !== 'puantaj');
+  alt.querySelectorAll('button').forEach((x) => { x.classList.toggle('acik', x.dataset.alt === S.sekme); x.setAttribute('aria-selected', x.dataset.alt === S.sekme); });
+  document.querySelectorAll('nav button').forEach((n) => n.classList.toggle('aktif', n.dataset.sekme === ana));
 }
 /* ---------------- ekranlar ---------------- */
 function ayCubuguHtml(yil, ay, onceki, sonraki) {
@@ -294,45 +300,55 @@ function ayDegistir(yil, ay, yon) {
 }
 
 function puantajHtml() {
-  if (!S.plaka) return bosDurumHtml('M3 5h18v16H3zM3 10h18', 'Henüz plaka yok', 'Masaüstü programda "Telefonla Senkronize Et" düğmesine bas.');
+  if (!D.plakalar.length) return bosDurumHtml('M3 5h18v16H3zM3 10h18', 'Henüz plaka yok', 'Masaüstü programda "Telefonla Senkronize Et" düğmesine bas.');
   const ya = yilAy(S.pYil, S.pAy);
-  const harita = D.puantaj[S.plaka + '|' + ya] || {};
   const gunSayisi = new Date(S.pYil, S.pAy, 0).getDate();
   const ilk = (new Date(S.pYil, S.pAy - 1, 1).getDay() + 6) % 7;
   const bg = new Date();
   const bugunGunu = (bg.getFullYear() === S.pYil && bg.getMonth() + 1 === S.pAy) ? bg.getDate() : 0;
-  let c = 0, t = 0, bos = 0, kayitVar = false;
   let hucre = '';
   for (let i = 0; i < ilk; i++) hucre += '<button class="gun bos" type="button" tabindex="-1" aria-hidden="true"></button>';
   for (let d = 1; d <= gunSayisi; d++) {
-    const r = harita[d];
-    let sinif = '', etiket = '', durumMetni = 'kayıt yok';
-    if (r && r.durum === 'Ç') { sinif = 'c'; etiket = 'Ç'; c++; kayitVar = true; durumMetni = 'çalıştı'; }
-    else if (r && r.durum === 'T') { sinif = 't'; etiket = 'T'; t++; kayitVar = true; durumMetni = 'tatil'; }
-    else if (r && r.durum === '0') { sinif = 's'; etiket = '0'; kayitVar = true; durumMetni = 'çalışmadı'; }
-    else bos++;
-    const secili = S.secim.indexOf(d) >= 0;
+    let c = 0, kayit = 0;
+    D.plakalar.forEach((p) => { const r = (D.puantaj[p + '|' + ya] || {})[d]; if (r) { kayit++; if (r.durum === 'Ç') c++; } });
+    const sinif = c ? 'c' : (kayit ? 't' : '');
     const hs = ((ilk + d - 1) % 7) >= 5 ? ' hs' : '';
-    hucre += '<button class="gun ' + sinif + hs + (d === bugunGunu ? ' bugun' : '') + (secili ? ' sec' : '') + '" type="button" data-act="gun" data-n="' + d + '" aria-label="' + d + ' ' + AYLAR[S.pAy - 1] + ', ' + durumMetni + (secili ? ', seçili' : '') + '">' +
-      '<b>' + d + '</b><i>' + etiket + '</i></button>';
+    hucre += '<button class="gun ' + sinif + hs + (d === bugunGunu ? ' bugun' : '') + '" type="button" data-act="gun" data-n="' + d + '" aria-label="' + d + ' ' + AYLAR[S.pAy - 1] + ', ' + c + ' araç çalıştı">' +
+      '<b>' + d + '</b><i class="say">' + (c ? c : '') + '</i></button>';
   }
-  const plakalar = D.plakalar.map((p) => '<button class="cip' + (p === S.plaka ? ' acik' : '') + '" type="button" data-act="plaka" data-p="' + esc(p) + '">' + esc(p) + '</button>').join('');
-  const R = 36, CEV = 2 * Math.PI * R, oran = Math.min(1, c / gunSayisi);
-  const halka = '<div class="halka"><svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="' + R + '" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="8"/>' +
-    '<circle cx="42" cy="42" r="' + R + '" fill="none" stroke="#EA7C15" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + (CEV * oran).toFixed(1) + ' ' + CEV.toFixed(1) + '" transform="rotate(-90 42 42)"/></svg>' +
-    '<div class="ic"><b>' + c + '</b><span>/ ' + gunSayisi + ' gün</span></div></div>';
   return ayCubuguHtml(S.pYil, S.pAy, 'p-onceki', 'p-sonraki') +
-    '<div class="yatay">' + plakalar + '</div>' +
-    '<div class="hero"><div class="ust-satir"><div class="e">' + esc(S.plaka) + ' · ' + AYLAR[S.pAy - 1] + '</div>' +
-    '<span class="hap yesil">%' + Math.round(oran * 100) + ' çalıştı</span></div>' +
-    '<div class="halka-k">' + halka + '<div class="mini-istat">' +
-    '<div><div class="e">Tatil</div><b>' + t + '</b></div><div><div class="e">Boş gün</div><b>' + bos + '</b></div></div></div></div>' +
     '<div class="kart" style="display:flex;flex-direction:column;gap:12px">' +
     '<div class="takvim">' + GUN_ADLARI.map((g, i) => '<div class="gun-adi' + (i >= 5 ? ' hs' : '') + '">' + g + '</div>').join('') + '</div>' +
     '<div class="takvim">' + hucre + '</div>' +
-    '<div class="not"><span><u style="background:#CFEBD9"></u>Ç çalıştı</span><span><u style="background:#F9E2B0"></u>T tatil</span><span><u style="background:#DDD6CF"></u>0 çalışmadı</span></div></div>' +
-    (!kayitVar ? '<div class="ipucu">Bu ay için kayıt görünmüyor. Masaüstünde senkronize edilmemiş olabilir; yine de gün seçip girebilirsin.</div>'
-      : (S.secim.length ? '' : '<div class="ipucu">Günlere dokunarak seç, sonra alttaki düğmeyle durumunu ata.<br>Aylar arasında sağa-sola kaydırarak da geçebilirsin.</div>'));
+    '<div class="not"><span><u style="background:#CFEBD9"></u>Gündeki sayı = o gün çalışan araç</span></div></div>' +
+    '<div class="ipucu">Bir güne dokun, araçları seç, firmayı seçip hepsini tek seferde kaydet.<br>Aylar arasında sağa-sola kaydırarak da geçebilirsin.</div>';
+}
+function hakedisHtml() {
+  const ya = yilAy(S.hYil, S.hAy);
+  const bar = ayCubuguHtml(S.hYil, S.hAy, 'h-onceki', 'h-sonraki');
+  const ikon = 'M3 5h18v16H3zM3 10h18';
+  if (D.hakedisYok) return bar + bosDurumHtml(ikon, 'Hakediş henüz hazır değil', "Supabase'te yeni SQL çalıştırılmalı ve masaüstü programı yeniden başlatılmalı.");
+  const satirlar = D.hakedis.filter((r) => r.yil_ay === ya);
+  if (!satirlar.length) return bar + bosDurumHtml(ikon, 'Bu ay için hakediş yok', 'Masaüstü senkronizasyonundan sonra burada görünür. Son 3 ay gönderilir.');
+  const gruplar = {};
+  satirlar.forEach((r) => { (gruplar[r.firma] || (gruplar[r.firma] = [])).push(r); });
+  let genel = 0;
+  const kartlar = Object.keys(gruplar).sort().map((f) => {
+    const l = gruplar[f]; const top = l.reduce((a, r) => a + (Number(r.tutar) || 0), 0); genel += top;
+    const arac = l.filter((r) => r.plaka !== 'Fatura (manuel)').length;
+    const acik = !!S.hAcik[f];
+    const detay = acik ? l.map((r) => {
+      const manuel = r.plaka === 'Fatura (manuel)';
+      const alt = manuel ? 'Elle girilen fatura' : [r.sofor, r.gun != null ? r.gun + ' gün' : null, r.fiyat != null ? tl(r.fiyat) + (r.donem ? ' / ' + String(r.donem).toLowerCase() : '') : null].filter(Boolean).join(' · ');
+      return '<div class="arac-s"><div class="o"><b>' + esc(manuel ? 'Manuel fatura' : r.plaka) + '</b><span>' + esc(alt) + '</span></div>' +
+        '<div class="t">' + (r.tutar == null ? '—' : tl(r.tutar)) + '</div></div>';
+    }).join('') : '';
+    return '<div class="kart firma-k"><button class="firma-b" type="button" data-act="h-ac" data-f="' + esc(f) + '" aria-expanded="' + acik + '">' +
+      '<div class="o"><b>' + esc(f) + '</b><span>' + arac + ' araç' + (arac !== l.length ? ' + manuel' : '') + '</span></div><div class="t">' + tl(top) + '</div>' +
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A7D73" stroke-width="2.4" stroke-linecap="round" style="transform:rotate(' + (acik ? 180 : 0) + 'deg)"><path d="M6 9l6 6 6-6"/></svg></button>' + detay + '</div>';
+  }).join('');
+  return bar + '<div class="hero"><div class="ust-satir"><div class="e">' + AYLAR[S.hAy - 1] + ' ' + S.hYil + ' hakediş toplamı</div></div><div class="buyuk kisalt">' + tl(genel) + '</div></div>' + kartlar +
+    '<div class="kart-k" style="font-size:13px;line-height:20px;color:#6B5F57;padding:16px 20px">Hakediş masaüstü programda hesaplanır; burada sadece gösterilir. Firmaya dokununca araç dökümü açılır.</div>';
 }
 function giderSatirHtml(g) {
   const bek = bekliyor(g);
@@ -448,10 +464,7 @@ function karZararHtml() {
 function aksiyonCiz() {
   const alan = document.getElementById('aksiyon-alani');
   let h = '';
-  if (S.sekme === 'puantaj' && S.secim.length) {
-    h = '<div class="aksiyon"><div class="m kisalt">' + S.secim.length + ' gün seçili</div>' +
-      '<button type="button" data-act="secim-temizle" style="background:transparent;color:#E3E6EB;padding:0 16px">Temizle</button>' +
-      '<button type="button" data-act="puantaj-panel" style="background:linear-gradient(135deg,#EA7C15,#C2540A);color:#fff;padding:0 20px">Durum ata</button></div>';
+  if (false) {
   } else if (S.sekme === 'gider' || S.sekme === 'gelir') {
     h = '<button class="fab" type="button" data-act="' + (S.sekme === 'gider' ? 'gider-panel' : 'gelir-panel') + '">' +
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>' +
@@ -464,7 +477,7 @@ function ekranCiz() {
   const k = document.getElementById('icerik');
   durumCiz();
   if (!S.yuklendi) { k.innerHTML = iskeletHtml(); aksiyonCiz(); return; }
-  const f = { puantaj: puantajHtml, gider: giderHtml, gelir: gelirHtml, karzarar: karZararHtml }[S.sekme];
+  const f = { puantaj: puantajHtml, hakedis: hakedisHtml, gider: giderHtml, gelir: gelirHtml, karzarar: karZararHtml }[S.sekme];
   k.innerHTML = f();
   aksiyonCiz();
 }
@@ -474,20 +487,15 @@ async function tikla(e) {
   const hedef = e.target.closest('[data-act]');
   if (!hedef) return;
   const a = hedef.dataset.act;
-  if (a === 'gun') {
-    const n = Number(hedef.dataset.n);
-    const i = S.secim.indexOf(n);
-    if (i >= 0) S.secim.splice(i, 1); else S.secim.push(n);
-    ekranCiz();
-  } else if (a === 'plaka') { S.plaka = hedef.dataset.p; S.secim = []; ekranCiz(); await puantajYuklePasif(); }
-  else if (a === 'p-onceki' || a === 'p-sonraki') {
-    const r = ayDegistir(S.pYil, S.pAy, a === 'p-onceki' ? -1 : 1); S.pYil = r[0]; S.pAy = r[1]; S.secim = []; ekranCiz(); await puantajYuklePasif();
+  if (a === 'gun') { gunPaneli(Number(hedef.dataset.n));
+  } else if (a === 'p-onceki' || a === 'p-sonraki') {
+    const r = ayDegistir(S.pYil, S.pAy, a === 'p-onceki' ? -1 : 1); S.pYil = r[0]; S.pAy = r[1]; ekranCiz(); await puantajYuklePasif();
+  } else if (a === 'h-onceki' || a === 'h-sonraki') { const r = ayDegistir(S.hYil, S.hAy, a === 'h-onceki' ? -1 : 1); S.hYil = r[0]; S.hAy = r[1]; ekranCiz();
+  } else if (a === 'h-ac') { S.hAcik[hedef.dataset.f] = !S.hAcik[hedef.dataset.f]; ekranCiz();
   } else if (a === 'g-onceki' || a === 'g-sonraki') { const r = ayDegistir(S.gYil, S.gAy, a === 'g-onceki' ? -1 : 1); S.gYil = r[0]; S.gAy = r[1]; ekranCiz(); }
   else if (a === 'l-onceki' || a === 'l-sonraki') { const r = ayDegistir(S.lYil, S.lAy, a === 'l-onceki' ? -1 : 1); S.lYil = r[0]; S.lAy = r[1]; ekranCiz(); }
   else if (a === 'l-filtre') { S.lFiltre = hedef.dataset.f; ekranCiz(); }
   else if (a === 'kz-yil') { S.kzYil = Number(hedef.dataset.y); ekranCiz(); }
-  else if (a === 'secim-temizle') { S.secim = []; ekranCiz(); }
-  else if (a === 'puantaj-panel') puantajPaneli();
   else if (a === 'gider-panel') giderPaneli();
   else if (a === 'gelir-panel') gelirPaneli();
 }
@@ -552,36 +560,68 @@ function hataGoster(kok, alanKimlik, mesaj) {
   }
 }
 
-function puantajPaneli() {
-  const gunler = S.secim.slice().sort((a, b) => a - b);
-  if (!gunler.length) return;
-  const form = { durum: 'Ç', firma: D.firmalar[0] || '', sofor: '' };
+function gunPaneli(gun) {
   const ya = yilAy(S.pYil, S.pAy);
-  const html = '<div style="font-size:14px;color:#5B6470">' + gunler.length + ' gün · ' + esc(S.plaka) + ' · ' + AYLAR[S.pAy - 1] + ' ' + S.pYil + '</div>' +
-    '<div class="alan"><div class="l">Durum</div>' + segHtml('p-durum', [['Ç', 'Ç'], ['T', 'T'], ['0', '0'], ['-', 'Sil']], 'Ç', 4) +
-    '<div style="font-size:12px;color:#5B6470">Ç çalıştı · T tatil · 0 çalışmadı · Sil kaydı kaldırır</div></div>' +
-    '<div id="p-cal" style="display:flex;flex-direction:column;gap:16px">' +
-    '<div class="alan"><label for="p-firma">Firma</label><select id="p-firma">' + secenekler(D.firmalar, form.firma) + '</select></div>' +
-    '<div class="alan"><label for="p-sofor">Şoför (isteğe bağlı)</label><select id="p-sofor"><option value="">Seçilmedi</option>' + secenekler(D.soforler, '') + '</select></div></div>';
-  panelAc('Durum ata', html, 'Kaydet', (kok) => {
+  const sonGun = new Date(S.pYil, S.pAy, 0).getDate();
+  const form = { durum: 'Ç', firma: '', firmaElle: false, bitis: gun, secili: {} };
+  const dur = (p, g) => { const r = (D.puantaj[p + '|' + ya] || {})[g]; return r ? r.durum : ''; };
+  const rozet = (d) => d === 'Ç' ? '<span class="hap yesil">Ç</span>' : d === 'T' ? '<span class="hap amber">T</span>' : d === '0' ? '<span class="hap">0</span>' : '';
+  const satirHtml = (p) => {
+    const b = D.plakaBilgi[p] || {};
+    return '<label class="pl-satir"><input type="checkbox" data-p="' + esc(p) + '"><div class="o"><b>' + esc(p) + '</b><span>' + esc([b.sofor, b.firma].filter(Boolean).join(' · ') || 'şoför/firma bilgisi yok') + '</span></div>' + rozet(dur(p, gun)) + '</label>';
+  };
+  const bitisSecenek = []; for (let g = gun; g <= sonGun; g++) bitisSecenek.push('<option value="' + g + '">' + g + ' ' + AYLAR[S.pAy - 1] + '</option>');
+  const html = '<div class="alan"><div class="l">Durum</div>' + segHtml('p-durum', [['Ç', 'Çalıştı'], ['T', 'Tatil'], ['0', '0'], ['-', 'Sil']], 'Ç', 4) + '</div>' +
+    '<div id="p-cal" class="alan"><label for="p-firma">Firma</label><select id="p-firma"><option value="">Seçiniz</option>' + secenekler(D.firmalar, '') + '</select></div>' +
+    '<div class="alan"><label for="p-bitis">Bitiş günü (birden çok gün için)</label><select id="p-bitis">' + bitisSecenek.join('') + '</select></div>' +
+    '<div class="alan" id="p-sayalan"><div class="l"><span id="p-say">0 araç seçili</span></div>' +
+    '<div class="hizli"><button type="button" data-h="hepsi">Tümü</button><button type="button" data-h="dun">Dünkü çalışanlar</button><button type="button" data-h="yok">Temizle</button></div>' +
+    '<div id="p-liste">' + D.plakalar.map(satirHtml).join('') + '</div></div>';
+  panelAc(gun + ' ' + AYLAR[S.pAy - 1] + ' ' + S.pYil, html, 'Kaydet', (kok) => {
+    const sec = () => Object.keys(form.secili).filter((p) => form.secili[p]);
+    const guncelle = () => {
+      kok.querySelector('#p-say').textContent = sec().length + ' araç seçili';
+      kok.querySelectorAll('#p-liste input').forEach((i) => { i.checked = !!form.secili[i.dataset.p]; });
+      if (!form.firmaElle && form.durum === 'Ç') {
+        const say = {}; sec().forEach((p) => { const f = (D.plakaBilgi[p] || {}).firma; if (f) say[f] = (say[f] || 0) + 1; });
+        const en = Object.keys(say).sort((a, b) => say[b] - say[a])[0] || '';
+        if (D.firmalar.indexOf(en) >= 0) form.firma = en;
+        kok.querySelector('#p-firma').value = form.firma;
+      }
+    };
     segBagla(kok, 'p-durum', (v) => { form.durum = v; kok.querySelector('#p-cal').classList.toggle('hidden', v !== 'Ç'); });
-    kok.querySelector('#p-firma').addEventListener('change', (ev) => { form.firma = ev.target.value; hataGoster(kok, 'p-firma', ''); });
-    kok.querySelector('#p-sofor').addEventListener('change', (ev) => { form.sofor = ev.target.value; });
+    kok.querySelector('#p-firma').addEventListener('change', (ev) => { form.firma = ev.target.value; form.firmaElle = true; hataGoster(kok, 'p-firma', ''); });
+    kok.querySelector('#p-bitis').addEventListener('change', (ev) => { form.bitis = Number(ev.target.value); });
+    kok.querySelector('#p-liste').addEventListener('change', (ev) => { const i = ev.target.closest('input'); if (i) { form.secili[i.dataset.p] = i.checked; hataGoster(kok, 'p-sayalan', ''); guncelle(); } });
+    kok.querySelector('.hizli').addEventListener('click', (ev) => {
+      const b = ev.target.closest('button'); if (!b) return;
+      form.secili = {};
+      if (b.dataset.h === 'hepsi') D.plakalar.forEach((p) => { form.secili[p] = true; });
+      if (b.dataset.h === 'dun') {
+        if (gun === 1) bildir('Ayın ilk gününde önceki gün bu ekranda yok.', 'u');
+        else D.plakalar.forEach((p) => { if (dur(p, gun - 1) === 'Ç') form.secili[p] = true; });
+      }
+      guncelle();
+    });
   }, async () => {
     const kok = document.getElementById('p-govde');
+    const plakalar = Object.keys(form.secili).filter((p) => form.secili[p]);
+    if (!plakalar.length) { hataGoster(kok, 'p-sayalan', 'En az bir araç seç.'); return false; }
     if (form.durum === 'Ç' && !form.firma) { hataGoster(kok, 'p-firma', 'Çalıştı için firma seçmelisin.'); return false; }
-    const satirlar = gunler.map((g) => ({
-      plaka: S.plaka, yil_ay: ya, gun: g, durum: form.durum,
-      firma: form.durum === 'Ç' ? form.firma : null, sofor: form.durum === 'Ç' && form.sofor ? form.sofor : null,
-      kaynak: 'mobil', alindi: false
-    }));
+    const satirlar = [];
+    for (let g = gun; g <= Math.max(gun, form.bitis); g++) plakalar.forEach((p) => {
+      satirlar.push({ plaka: p, yil_ay: ya, gun: g, durum: form.durum,
+        firma: form.durum === 'Ç' ? form.firma : null, sofor: form.durum === 'Ç' && (D.plakaBilgi[p] || {}).sofor ? D.plakaBilgi[p].sofor : null,
+        kaynak: 'mobil', alindi: false });
+    });
     const sonuc = await kaydet({ tablo: 'puantaj', satirlar: satirlar, cakisma: 'plaka,yil_ay,gun' });
-    const harita = D.puantaj[S.plaka + '|' + ya] || (D.puantaj[S.plaka + '|' + ya] = {});
-    satirlar.forEach((s) => { if (s.durum === '-') delete harita[s.gun]; else harita[s.gun] = s; });
+    satirlar.forEach((r) => {
+      const harita = D.puantaj[r.plaka + '|' + ya] || (D.puantaj[r.plaka + '|' + ya] = {});
+      if (r.durum === '-') delete harita[r.gun]; else harita[r.gun] = r;
+    });
     D.bekleyen += 1;
-    S.secim = [];
     onbellekYaz(); ekranCiz();
-    bildir(sonuc === 'tamam' ? 'Kaydedildi.' : 'İnternet yok; kayıt cihazda bekliyor, bağlantı gelince gönderilecek.', sonuc === 'tamam' ? '' : 'u');
+    bildir(sonuc === 'tamam' ? plakalar.length + ' araç kaydedildi.' : 'İnternet yok; kayıt cihazda bekliyor, bağlantı gelince gönderilecek.', sonuc === 'tamam' ? '' : 'u');
     return true;
   });
 }
@@ -682,7 +722,7 @@ function baslat() {
   const onb = depoOku(ONBELLEK_ANAHTAR, null);
   if (onb) {
     D = Object.assign(D, onb);
-    if (D.plakalar.length) { S.plaka = D.plakalar[0]; S.yuklendi = true; }
+    if (D.plakalar.length) { S.yuklendi = true; }
   }
   uygulamaGoster();
   ekranCiz();
@@ -697,9 +737,13 @@ function gecisOynat() {
   k.classList.remove('gecis'); void k.offsetWidth; k.classList.add('gecis');
   clearTimeout(gecisOynat.z); gecisOynat.z = setTimeout(() => k.classList.remove('gecis'), 600);
 }
+document.getElementById('alt-sekme').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button'); if (!b || S.sekme === b.dataset.alt) return;
+  S.sekme = b.dataset.alt; ekranCiz(); document.getElementById('icerik').scrollTop = 0; gecisOynat();
+});
 document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
   if (S.sekme === b.dataset.sekme) { document.getElementById('icerik').scrollTo({ top: 0, behavior: 'smooth' }); return; }
-  S.sekme = b.dataset.sekme; S.secim = []; ekranCiz();
+  S.sekme = b.dataset.sekme; ekranCiz();
   document.getElementById('icerik').scrollTop = 0;
   gecisOynat();
 }));
@@ -708,7 +752,7 @@ document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click
 (function dokunmaHareketleri() {
   const k = document.getElementById('icerik'), ptr = document.getElementById('ptr');
   let x0 = 0, y0 = 0, sure = false, yatayBolge = false, cekme = 0, kaydir = false;
-  const ptrYerle = () => { ptr.style.top = (document.querySelector('.ust').offsetHeight + 10) + 'px'; };
+  const ptrYerle = () => { ptr.style.top = (document.querySelector('.ust').offsetHeight + (document.getElementById('alt-sekme').classList.contains('hidden') ? 0 : 58) + 10) + 'px'; };
   k.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; cekme = 0; kaydir = false;
@@ -737,8 +781,8 @@ document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click
 document.getElementById('cikis').addEventListener('click', () => {
   if (kuyruk.length && !confirm('Gönderilmemiş ' + kuyruk.length + ' kayıt var. Çıkarsan bu kayıtlar kaybolur. Yine de çıkılsın mı?')) return;
   oturum = null; depoSil(OTURUM_ANAHTAR); depoSil(ONBELLEK_ANAHTAR); depoSil(KUYRUK_ANAHTAR);
-  kuyruk = []; D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0 };
-  S.yuklendi = false; S.plaka = null;
+  kuyruk = []; D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
+  S.yuklendi = false;
   girisGoster();
 });
 document.getElementById('giris-form').addEventListener('submit', async (ev) => {
@@ -761,3 +805,15 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ot
 
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => { /* çevrimdışı önbellek olmadan da çalışır */ }); }
 if (oturum) baslat(); else girisGoster();
+
+/* iPhone'da ana ekrandan açılınca altta kalan boşluğu kapat */
+(function altBosluk() {
+  const duzelt = () => {
+    const k = document.getElementById('uygulama');
+    if (!k) return;
+    const dikey = screen.height > screen.width;
+    if (window.navigator.standalone && dikey && window.innerHeight < screen.height - 5) k.style.height = screen.height + 'px';
+    else k.style.height = '';
+  };
+  window.addEventListener('resize', duzelt); window.addEventListener('orientationchange', () => setTimeout(duzelt, 300)); duzelt();
+})();
