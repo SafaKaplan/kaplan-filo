@@ -1,5 +1,5 @@
 /* Kaplan Filo - basit çevrimdışı önbellek: önce internet, olmazsa son kaydedilen kopya. */
-const ONBELLEK = 'filo-v8';
+const ONBELLEK = 'filo-v9';
 const DOSYALAR = ['./', 'index.html', 'app.js', 'splash.js', 'logo.png', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-180.png'];
 
 self.addEventListener('install', (e) => {
