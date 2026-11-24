@@ -321,8 +321,7 @@ function puantajHtml() {
     '<div class="takvim">' + GUN_ADLARI.map((g, i) => '<div class="gun-adi' + (i >= 5 ? ' hs' : '') + '">' + g + '</div>').join('') + '</div>' +
     '<div class="takvim">' + hucre + '</div>' +
     '<div class="not"><span><u style="background:#CFEBD9"></u>Gündeki sayı = o gün çalışan araç</span></div></div>' +
-    '<div class="ipucu">Bir güne dokun, araçları seç, firmayı seçip hepsini tek seferde kaydet.<br>Aylar arasında sağa-sola kaydırarak da geçebilirsin.</div>' +
-    '<div class="ipucu" style="font-size:11px;opacity:.6">Sürüm 7 · pencere ' + window.innerHeight + ' / ekran ' + screen.height + (window.navigator.standalone ? ' · uygulama' : ' · tarayıcı') + '</div>';
+    '<div class="ipucu">Bir güne dokun, araçları seç, firmayı seçip hepsini tek seferde kaydet.<br>Aylar arasında sağa-sola kaydırarak da geçebilirsin.</div>';
 }
 function hakedisHtml() {
   const ya = yilAy(S.hYil, S.hAy);
