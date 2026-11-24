@@ -25,7 +25,6 @@
 html,body{margin:0;height:100%;background:var(--zemin);color:var(--yazi);
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   -webkit-text-size-adjust:100%;overscroll-behavior:none;font-variant-numeric:tabular-nums}
-html{background:#FDFCFB}
 button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .12s ease,background-color .15s ease,box-shadow .15s ease}
 button:active{transform:scale(.97)}
 input,select{font-family:inherit}
@@ -195,9 +194,8 @@ h1{margin:2px 0 0;font-size:28px;line-height:34px;font-weight:800;letter-spacing
 .fab{position:absolute;right:16px;bottom:calc(92px + env(safe-area-inset-bottom));height:58px;padding:0 24px 0 20px;border:0;border-radius:29px;display:inline-flex;align-items:center;gap:10px;
   background:linear-gradient(135deg,#EA7C15,#C2540A);color:#fff;font-size:16px;font-weight:800;box-shadow:0 12px 28px rgba(194,84,10,.45);animation:gir .25s ease both}
 
-nav{flex:none;position:relative;background:rgba(255,255,255,.92);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);
-  border-top:1px solid var(--cizgi);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:6px 8px calc(8px + env(safe-area-inset-bottom)) 8px}
-nav::after{content:"";position:absolute;left:0;right:0;top:100%;height:120px;background:#fff}
+nav{flex:none;position:relative;background:var(--zemin);
+  border-top:1px solid var(--cizgi);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:6px 8px 10px 8px}
 nav button{border:0;background:transparent;border-radius:14px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11px;font-weight:700;color:#7C6F65;letter-spacing:.01em}
 nav button .ik{width:56px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;transition:background-color .2s,color .2s,transform .2s}
 nav button.aktif{color:var(--vurgu)}
