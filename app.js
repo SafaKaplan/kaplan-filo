@@ -178,10 +178,10 @@ const S = {
   kzYil: simdi.getFullYear(),
   hYil: simdi.getFullYear(), hAy: simdi.getMonth() + 1, hAcik: {}
 };
-let D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
+let D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], kzYillik: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
 
 function onbellekYaz() {
-  depoYaz(ONBELLEK_ANAHTAR, { plakalar: D.plakalar, firmalar: D.firmalar, soforler: D.soforler, giderler: D.giderler, gelirler: D.gelirler, kz: D.kz, puantaj: D.puantaj, bekleyen: D.bekleyen, plakaBilgi: D.plakaBilgi, hakedis: D.hakedis, hakedisYok: D.hakedisYok });
+  depoYaz(ONBELLEK_ANAHTAR, { plakalar: D.plakalar, firmalar: D.firmalar, soforler: D.soforler, giderler: D.giderler, gelirler: D.gelirler, kz: D.kz, kzYillik: D.kzYillik, puantaj: D.puantaj, bekleyen: D.bekleyen, plakaBilgi: D.plakaBilgi, hakedis: D.hakedis, hakedisYok: D.hakedisYok });
 }
 function pAnahtar() { return S.plaka + '|' + yilAy(S.pYil, S.pAy); }
 
@@ -204,10 +204,11 @@ async function verileriYukle() {
       hepsi('giderler', { order: 'tarih.desc' }), hepsi('gelirler', { order: 'tarih.desc' }),
       hepsi('kar_zarar_ozet', { order: 'yil.asc,ay.asc' }),
       api('GET', 'puantaj', { select: 'plaka', kaynak: 'eq.mobil', alindi: 'eq.false', limit: '1000' }),
+      hepsi('kar_zarar_yillik', { order: 'yil.asc' }).catch((e) => ((e.tur === 'OTURUM' || e.tur === 'AG') ? Promise.reject(e) : [])),
       hepsi('hakedis', { order: 'yil_ay.asc,firma.asc,plaka.asc' }).then((r) => ({ ok: true, r: r }), (e) => ((e.tur === 'OTURUM' || e.tur === 'AG') ? Promise.reject(e) : { ok: false, r: [] }))
     ]);
     D.plakaBilgi = {}; sonuc[0].forEach((r) => { D.plakaBilgi[r.plaka] = { firma: r.firma || '', sofor: r.sofor || '' }; });
-    D.hakedis = sonuc[7].r; D.hakedisYok = !sonuc[7].ok;
+    D.kzYillik = sonuc[7]; D.hakedis = sonuc[8].r; D.hakedisYok = !sonuc[8].ok;
     D.plakalar = sonuc[0].map((r) => r.plaka); D.firmalar = sonuc[1].map((r) => r.ad); D.soforler = sonuc[2].map((r) => r.ad);
     D.giderler = sonuc[3]; D.gelirler = sonuc[4]; D.kz = sonuc[5];
     D.bekleyen = sonuc[6].length + D.giderler.filter(bekliyor).length + D.gelirler.filter(bekliyor).length;
@@ -420,46 +421,30 @@ function karZararHtml() {
   const gid = satirlar.reduce((a, r) => a + Number(r.gider_kdv_haric), 0);
   const net = gel - gid;
   const kamyon = Number(satirlar[satirlar.length - 1].kamyon_sayisi) || 10;
-  const netler = satirlar.map((r) => Number(r.gelir) - Number(r.gider_kdv_haric));
-  const enBuyuk = Math.max(1, ...netler.map((n) => Math.abs(n)));
+  const aySay = satirlar.length || 1;
+  const yl = D.kzYillik.filter((r) => r.yil === S.kzYil)[0];
   const guncel = D.kz.reduce((a, r) => (r.guncelleme > a ? r.guncelleme : a), '');
   const guncelMetin = guncel ? new Date(guncel).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   const yilSecici = yillar.length > 1 ? '<div class="yatay">' + yillar.map((y) => '<button class="cip' + (y === S.kzYil ? ' acik' : '') + '" type="button" data-act="kz-yil" data-y="' + y + '">' + y + '</button>').join('') + '</div>' : '';
-  // 12 aylık sütun grafiği
-  const poz = Math.max(0, ...netler), neg = Math.max(0, ...netler.map((n) => -n));
-  const aralik = (poz + neg) || 1, yuk = 92, sifirY = 8 + poz / aralik * yuk;
-  const netAy = {}; satirlar.forEach((r, i) => { netAy[r.ay] = netler[i]; });
-  let sutun = '';
-  for (let a = 1; a <= 12; a++) {
-    const x = (a - 1) * 28 + 5, n = netAy[a];
-    if (n !== undefined) {
-      const h = Math.max(3, Math.abs(n) / aralik * yuk);
-      sutun += '<rect x="' + x + '" y="' + (n >= 0 ? sifirY - h : sifirY) + '" width="18" height="' + h.toFixed(1) + '" rx="5" fill="' + (n < 0 ? '#C0392B' : '#2F9E62') + '"/>';
-    } else sutun += '<rect x="' + x + '" y="' + (sifirY - 1.5) + '" width="18" height="3" rx="1.5" fill="#E3DCD4"/>';
-    sutun += '<text x="' + (x + 9) + '" y="124" text-anchor="middle">' + AYLAR[a - 1].charAt(0) + '</text>';
-  }
-  const grafik = '<svg class="grafik" viewBox="0 0 336 130" role="img" aria-label="Aylık net kâr zarar grafiği">' +
-    '<line x1="0" y1="' + sifirY + '" x2="336" y2="' + sifirY + '" stroke="#DDD3C8" stroke-dasharray="3 4"/>' + sutun + '</svg>';
-  const aylik = satirlar.map((r) => {
-    const n = Number(r.gelir) - Number(r.gider_kdv_haric);
-    return '<div style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px">' +
-      '<div style="font-size:14px;font-weight:700">' + AYLAR[r.ay - 1] + '</div>' +
-      '<div style="font-size:15px;font-weight:800;white-space:nowrap;color:' + (n < 0 ? '#9B2C1F' : '#14663A') + '">' + (n >= 0 ? '+' : '') + tlKisa(n) + '</div></div>' +
-      '<div class="cubuk"><div style="width:' + Math.max(4, Math.round(Math.abs(n) / enBuyuk * 100)) + '%;background:' + (n < 0 ? '#C0392B' : '#2F9E62') + '"></div></div>' +
-      '<div class="etiket kisalt">Gelir ' + tlKisa(r.gelir) + ' · Gider ' + tlKisa(r.gider_kdv_haric) + '</div></div>';
-  }).join('');
+  const kart = (baslik, deger, renk, genis) => '<div class="kz-kart' + (genis ? ' genis' : '') + '"><div class="b">' + baslik + '</div><div class="d" style="color:' + renk + '">' + deger + '</div></div>';
+  const YES = '#14663A', KIR = '#9B2C1F', KOY = '#1E1611';
+  const kdv = yl ? tl(yl.odenecek_kdv) : '—';
+  const fsiz = yl ? tl(yl.faturasiz_kalan_gider) : '—';
   return yilSecici +
-    '<div class="hero"><div class="ust-satir"><div class="e">' + S.kzYil + ' net kâr / zarar</div>' +
-    '<span class="hap ' + (net < 0 ? 'kirmizi' : 'yesil') + '">' + (net < 0 ? 'Zarar' : 'Kâr') + '</span></div>' +
-    '<div class="buyuk kisalt">' + tl(net) + '</div>' +
-    '<div class="hero-izgara"><div style="min-width:0"><div class="e">Gelir (KDV hariç)</div><b class="kisalt">' + tlKisa(gel) + '</b></div>' +
-    '<div style="min-width:0"><div class="e">Gider (KDV hariç)</div><b class="kisalt">' + tlKisa(gid) + '</b></div></div>' +
-    '<div class="ince"></div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="e">Kamyon başı net (' + kamyon + ' kamyon)</div><b style="font-size:17px;white-space:nowrap">' + tlKisa(net / kamyon) + '</b></div></div>' +
-    '<div class="kart" style="display:flex;flex-direction:column;gap:12px"><div style="font-size:16px;font-weight:800">Aylık görünüm</div>' + grafik + '</div>' +
-    '<div class="kart" style="display:flex;flex-direction:column;gap:16px"><div style="font-size:16px;font-weight:800">Aylık net</div>' + aylik + '</div>' +
-    '<div class="kart-k" style="font-size:13px;line-height:20px;color:#6B5F57;padding:16px 20px">Bu ekran sadece gösterim içindir. Rakamlar masaüstü programda hesaplanır ve senkronizasyondan sonra buraya gelir.' +
-    (guncelMetin ? ' Son güncelleme: ' + esc(guncelMetin) + '.' : '') + ' Telefondan eklediğin kayıtlar, masaüstünde senkronize edilince kâr/zarara yansır.</div>';
+    '<div class="kz-izgara">' +
+    kart('TOPLAM GELİR (KDV hariç)', tl(gel), YES) +
+    kart('TOPLAM GİDER (KDV hariç)', tl(gid), KIR) +
+    kart('NET KÂR / ZARAR', tl(net), net < 0 ? KIR : YES, true) +
+    kart('ÖDENECEK KDV (yıl toplamı)', kdv, '#B45309') +
+    kart('FATURASIZ KALAN GİDER (X − Y)', fsiz, '#7C2D12') +
+    kart('KAMYON SAYISI (baz)', String(kamyon), KOY, true) +
+    kart('KAMYON BAŞI GELİR (yıl)', tl(gel / kamyon), YES) +
+    kart('KAMYON BAŞI GİDER (yıl)', tl(gid / kamyon), KIR) +
+    kart('KAMYON BAŞI NET (yıl)', tl(net / kamyon), net < 0 ? KIR : KOY) +
+    kart('KAMYON BAŞI AYLIK NET', tl(net / kamyon / aySay), net < 0 ? KIR : KOY) +
+    '</div>' +
+    '<div class="kart-k" style="font-size:13px;line-height:20px;color:#6B5F57;padding:16px 20px">Bu ekran masaüstündeki Kâr / Zarar kutularıyla aynı rakamları gösterir ve sadece gösterim içindir.' +
+    (guncelMetin ? ' Son güncelleme: ' + esc(guncelMetin) + '.' : '') + '</div>';
 }
 function aksiyonCiz() {
   const alan = document.getElementById('aksiyon-alani');
@@ -781,7 +766,7 @@ document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click
 document.getElementById('cikis').addEventListener('click', () => {
   if (kuyruk.length && !confirm('Gönderilmemiş ' + kuyruk.length + ' kayıt var. Çıkarsan bu kayıtlar kaybolur. Yine de çıkılsın mı?')) return;
   oturum = null; depoSil(OTURUM_ANAHTAR); depoSil(ONBELLEK_ANAHTAR); depoSil(KUYRUK_ANAHTAR);
-  kuyruk = []; D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
+  kuyruk = []; D = { plakalar: [], firmalar: [], soforler: [], giderler: [], gelirler: [], kz: [], kzYillik: [], puantaj: {}, bekleyen: 0, plakaBilgi: {}, hakedis: [], hakedisYok: false };
   S.yuklendi = false;
   girisGoster();
 });
