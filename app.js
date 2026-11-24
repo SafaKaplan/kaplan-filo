@@ -322,7 +322,7 @@ function puantajHtml() {
     '<div class="takvim">' + hucre + '</div>' +
     '<div class="not"><span><u style="background:#CFEBD9"></u>Gündeki sayı = o gün çalışan araç</span></div></div>' +
     '<div class="ipucu">Bir güne dokun, araçları seç, firmayı seçip hepsini tek seferde kaydet.<br>Aylar arasında sağa-sola kaydırarak da geçebilirsin.</div>' +
-    '<div class="ipucu" style="font-size:11px;opacity:.6">Sürüm 4 · pencere ' + window.innerHeight + ' / ekran ' + screen.height + (window.navigator.standalone ? ' · uygulama' : ' · tarayıcı') + '</div>';
+    '<div class="ipucu" style="font-size:11px;opacity:.6">Sürüm 5 · pencere ' + window.innerHeight + ' / ekran ' + screen.height + (window.navigator.standalone ? ' · uygulama' : ' · tarayıcı') + '</div>';
 }
 function hakedisHtml() {
   const ya = yilAy(S.hYil, S.hAy);
@@ -806,18 +806,3 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ot
 
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => { /* çevrimdışı önbellek olmadan da çalışır */ }); }
 if (oturum) baslat(); else girisGoster();
-
-/* iPhone'da ana ekrandan açılınca altta kalan boşluğu kapat */
-(function altBosluk() {
-  const duzelt = () => {
-    const k = document.getElementById('uygulama');
-    if (!k) return;
-    const dikey = screen.height > screen.width;
-    const hedef = Math.max(window.innerHeight, dikey ? screen.height : 0);
-    if (window.navigator.standalone && dikey) { k.style.height = hedef + 'px'; k.style.bottom = 'auto'; }
-    else { k.style.height = ''; k.style.bottom = ''; }
-    if (location.hash === '#tani') document.title = 'iH' + window.innerHeight + ' sH' + screen.height + ' st' + window.navigator.standalone + ' ub' + Math.round(k.getBoundingClientRect().bottom);
-  };
-  window.addEventListener('resize', duzelt); window.addEventListener('orientationchange', () => setTimeout(duzelt, 300)); window.addEventListener('pageshow', duzelt);
-  duzelt(); setTimeout(duzelt, 500); setTimeout(duzelt, 1500);
-})();
